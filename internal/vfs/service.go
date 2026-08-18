@@ -10,6 +10,7 @@ import (
 
 type Repository interface {
 	EnsureRoot(ctx context.Context) (store.Directory, error)
+	GetDirectory(ctx context.Context, id int64) (store.Directory, error)
 	CreateDirectory(ctx context.Context, parentID int64, name, path string) (store.Directory, error)
 	CreateFile(ctx context.Context, parentID int64, name string, size int64, status string) (store.FileEntry, error)
 	DeleteFileLogical(ctx context.Context, fileID int64) error
@@ -36,6 +37,10 @@ func (s *Service) CreateDirectory(ctx context.Context, parent store.Directory, n
 		fullPath = "/" + name
 	}
 	return s.repo.CreateDirectory(ctx, parent.ID, name, fullPath)
+}
+
+func (s *Service) GetDirectory(ctx context.Context, id int64) (store.Directory, error) {
+	return s.repo.GetDirectory(ctx, id)
 }
 
 func (s *Service) CreateFile(ctx context.Context, parentID int64, name string, size int64, status string) (store.FileEntry, error) {

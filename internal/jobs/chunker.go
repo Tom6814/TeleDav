@@ -11,6 +11,9 @@ type ChunkPart struct {
 }
 
 func BuildChunkPlan(path string, chunkSize int64) ([]ChunkPart, error) {
+	if chunkSize <= 0 {
+		chunkSize = 4 << 20
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err

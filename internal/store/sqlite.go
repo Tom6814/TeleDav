@@ -69,6 +69,16 @@ FROM directories WHERE id = ?`, id)
 	return d, err
 }
 
+func (r *Repository) GetDirectory(ctx context.Context, id int64) (Directory, error) {
+	row := r.db.QueryRowContext(ctx, `
+SELECT id, parent_id, name, path, created_at, updated_at
+FROM directories
+WHERE id = ?`, id)
+	var d Directory
+	err := row.Scan(&d.ID, &d.ParentID, &d.Name, &d.Path, &d.CreatedAt, &d.UpdatedAt)
+	return d, err
+}
+
 func (r *Repository) ListDirectories(ctx context.Context, parentID int64) ([]Directory, error) {
 	rows, err := r.db.QueryContext(ctx, `
 SELECT id, parent_id, name, path, created_at, updated_at
@@ -180,6 +190,11 @@ ORDER BY chunk_index`, fileID)
 		out = append(out, fc)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) ResetFileChunks(ctx context.Context, fileID int64) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM file_chunks WHERE file_id = ?`, fileID)
+	return err
 }
 
 func (r *Repository) CreateUploadJob(ctx context.Context, source, stage, stagedPath string, fileID int64) (UploadJob, error) {
