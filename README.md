@@ -35,11 +35,22 @@ export APP_WEB_DIR=web/build/web
 ## Phase 1 Validation
 
 - Log in through the web UI.
-- Create a directory from the REST API.
-- Upload one small file through the UI upload endpoint.
+- Create directories from the web UI or REST API.
+- Upload a small file through the web UI or `/api/fs/upload`.
+- Save storage settings from the web UI and restart the server to verify persisted values are applied when env vars are not overriding them.
+- Retry a failed upload job from the Jobs tab or `POST /api/jobs/:id/retry`.
 - Mount `/webdav/` with Cyberduck or `rclone`.
 - Verify only `ready` files appear in listings.
 - Restart the server and re-check pending jobs.
+
+## Web UI Capabilities
+
+- Login with the single-user password.
+- Browse the virtual directory tree by directory.
+- Create subdirectories in the current folder.
+- Upload files into the current folder.
+- Inspect and retry failed jobs.
+- Edit persisted storage settings, including Telegram target chat ID and session blob.
 
 ## Current Limits
 

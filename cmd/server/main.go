@@ -52,6 +52,11 @@ func main() {
 	if _, err := repo.EnsureRoot(context.Background()); err != nil {
 		log.Fatal(err)
 	}
+	storedCfg, err := repo.GetSystemConfig(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	cfg = applyStoredConfig(cfg, env, storedCfg)
 	if err := os.MkdirAll(cfg.StagingDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
@@ -64,6 +69,7 @@ func main() {
 	uploader := jobs.NewUploader(repo, telegramClient)
 	downloader := jobs.NewDownloader(repo, telegramClient)
 	fsService := vfs.New(repo)
+	jobController := jobs.NewJobController(repo, uploader, cfg.DefaultChunkSize)
 	if err := jobs.RunRecovery(context.Background(), jobs.NewRecoveryService(repo, uploader, cfg.DefaultChunkSize)); err != nil {
 		log.Fatal(err)
 	}
@@ -76,7 +82,8 @@ func main() {
 		Quota:            jobs.NewQuota(cfg.MaxStagingBytes),
 		ConfigStore:      repo,
 		FS:               fsService,
-		Jobs:             repo,
+		Jobs:             jobController,
+		Retryer:          jobController,
 		Uploader:         uploader,
 		Downloader:       downloader,
 		WebDAV: appwebdav.New(&appwebdav.Service{
@@ -90,4 +97,20 @@ func main() {
 
 	log.Printf("listening on %s", cfg.ListenAddr)
 	log.Fatal(http.ListenAndServe(cfg.ListenAddr, handler))
+}
+
+func applyStoredConfig(cfg config.Config, env map[string]string, stored store.SystemConfig) config.Config {
+	if env["APP_PASSWORD"] == "" && stored.AppPassword != "" {
+		cfg.AppPassword = stored.AppPassword
+	}
+	if env["APP_DEFAULT_CHUNK_SIZE"] == "" && stored.DefaultChunkSize > 0 {
+		cfg.DefaultChunkSize = stored.DefaultChunkSize
+	}
+	if env["APP_MAX_STAGING_BYTES"] == "" && stored.MaxStagingBytes > 0 {
+		cfg.MaxStagingBytes = stored.MaxStagingBytes
+	}
+	if env["APP_TELEGRAM_CHAT_ID"] == "" && stored.TelegramTargetChatID != 0 {
+		cfg.TelegramChatID = stored.TelegramTargetChatID
+	}
+	return cfg
 }

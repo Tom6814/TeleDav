@@ -17,6 +17,7 @@ type Dependencies struct {
 	ConfigStore      ConfigStore
 	FS               FileSystem
 	Jobs             JobReader
+	Retryer          JobRetryer
 	Uploader         UploadService
 	Downloader       DownloadService
 	WebDAV           http.Handler
@@ -32,6 +33,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.Handle("/api/fs/upload", requireSession(deps, uploadHandler(deps)))
 	mux.Handle("/api/fs/file/", requireSession(deps, downloadHandler(deps)))
 	mux.Handle("/api/jobs", requireSession(deps, jobsHandler(deps)))
+	mux.Handle("/api/jobs/", requireSession(deps, jobsHandler(deps)))
 
 	webdavHandler := deps.WebDAV
 	if webdavHandler == nil {

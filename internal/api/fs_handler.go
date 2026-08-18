@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -34,6 +35,7 @@ type QuotaManager interface {
 
 type DownloadService interface {
 	ReadAll(ctx context.Context, fileID int64) ([]byte, error)
+	StreamTo(ctx context.Context, fileID int64, w io.Writer) error
 }
 
 type mkdirRequest struct {
@@ -56,14 +58,28 @@ func fsTreeHandler(deps Dependencies) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		listing, err := deps.FS.ListDirectory(r.Context(), root.ID)
+		current := root
+		if raw := strings.TrimSpace(r.URL.Query().Get("parent_id")); raw != "" {
+			parentID, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid parent_id", http.StatusBadRequest)
+				return
+			}
+			current, err = deps.FS.GetDirectory(r.Context(), parentID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		listing, err := deps.FS.ListDirectory(r.Context(), current.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"root":    root,
-			"listing": listing,
+			"root":      root,
+			"directory": current,
+			"listing":   listing,
 		})
 	})
 }
@@ -180,8 +196,20 @@ func uploadHandler(deps Dependencies) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		parentID := root.ID
+		if raw := strings.TrimSpace(r.FormValue("parent_id")); raw != "" {
+			parentID, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				http.Error(w, "invalid parent_id", http.StatusBadRequest)
+				return
+			}
+			if _, err := deps.FS.GetDirectory(r.Context(), parentID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		result, err := deps.Uploader.Run(r.Context(), jobs.UploadInput{
-			ParentID:   root.ID,
+			ParentID:   parentID,
 			Name:       fileName,
 			Source:     "ui",
 			StagedPath: stagedPath,
@@ -217,12 +245,10 @@ func downloadHandler(deps Dependencies) http.Handler {
 			http.Error(w, "invalid file id", http.StatusBadRequest)
 			return
 		}
-		data, err := deps.Downloader.ReadAll(r.Context(), fileID)
-		if err != nil {
+		w.WriteHeader(http.StatusOK)
+		if err := deps.Downloader.StreamTo(r.Context(), fileID, w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(data)
 	})
 }

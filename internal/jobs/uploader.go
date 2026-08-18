@@ -17,6 +17,7 @@ type uploaderRepository interface {
 	CreateUploadJob(ctx context.Context, source, stage, stagedPath string, fileID int64) (store.UploadJob, error)
 	UpdateUploadJob(ctx context.Context, jobID int64, stage string, lastChunkIndex int, lastError string) error
 	AppendChunk(ctx context.Context, fileID int64, chunk store.FileChunk) error
+	ListChunks(ctx context.Context, fileID int64) ([]store.FileChunk, error)
 	GetFile(ctx context.Context, fileID int64) (store.FileEntry, error)
 	MarkFileReady(ctx context.Context, fileID int64) error
 	ResetFileChunks(ctx context.Context, fileID int64) error
@@ -70,9 +71,6 @@ func (u *Uploader) Resume(ctx context.Context, job store.UploadJob, chunkSize in
 	if err != nil {
 		return err
 	}
-	if err := u.repo.ResetFileChunks(ctx, file.ID); err != nil {
-		return err
-	}
 	_, err = u.uploadExisting(ctx, file, job, job.StagedPath, chunkSize)
 	return err
 }
@@ -82,16 +80,31 @@ func (u *Uploader) uploadExisting(ctx context.Context, file store.FileEntry, job
 	if err != nil {
 		return UploadResult{}, err
 	}
+	existing, err := u.repo.ListChunks(ctx, file.ID)
+	if err != nil {
+		return UploadResult{}, err
+	}
+	existingByIndex := make(map[int]store.FileChunk, len(existing))
+	lastSuccessfulIndex := -1
+	for _, chunk := range existing {
+		existingByIndex[chunk.ChunkIndex] = chunk
+		if chunk.ChunkIndex > lastSuccessfulIndex {
+			lastSuccessfulIndex = chunk.ChunkIndex
+		}
+	}
 	for _, part := range parts {
+		if _, ok := existingByIndex[part.Index]; ok {
+			continue
+		}
 		chunkPath, checksum, err := materializeChunk(stagedPath, part)
 		if err != nil {
-			_ = u.repo.UpdateUploadJob(ctx, job.ID, "failed", part.Index, err.Error())
+			_ = u.repo.UpdateUploadJob(ctx, job.ID, "failed", lastSuccessfulIndex, err.Error())
 			return UploadResult{}, err
 		}
 		ref, err := u.client.UploadChunk(ctx, chunkPath)
 		_ = os.Remove(chunkPath)
 		if err != nil {
-			_ = u.repo.UpdateUploadJob(ctx, job.ID, "failed", part.Index, err.Error())
+			_ = u.repo.UpdateUploadJob(ctx, job.ID, "failed", lastSuccessfulIndex, err.Error())
 			return UploadResult{}, err
 		}
 		if err := u.repo.AppendChunk(ctx, file.ID, store.FileChunk{
@@ -102,9 +115,10 @@ func (u *Uploader) uploadExisting(ctx context.Context, file store.FileEntry, job
 			TelegramChatID:    ref.ChatID,
 			TelegramMessageID: ref.MessageID,
 		}); err != nil {
-			_ = u.repo.UpdateUploadJob(ctx, job.ID, "failed", part.Index, err.Error())
+			_ = u.repo.UpdateUploadJob(ctx, job.ID, "failed", lastSuccessfulIndex, err.Error())
 			return UploadResult{}, err
 		}
+		lastSuccessfulIndex = part.Index
 		if err := u.repo.UpdateUploadJob(ctx, job.ID, "uploading", part.Index, ""); err != nil {
 			return UploadResult{}, err
 		}
@@ -112,7 +126,7 @@ func (u *Uploader) uploadExisting(ctx context.Context, file store.FileEntry, job
 	if err := u.repo.MarkFileReady(ctx, file.ID); err != nil {
 		return UploadResult{}, err
 	}
-	if err := u.repo.UpdateUploadJob(ctx, job.ID, "done", len(parts), ""); err != nil {
+	if err := u.repo.UpdateUploadJob(ctx, job.ID, "done", lastSuccessfulIndex, ""); err != nil {
 		return UploadResult{}, err
 	}
 	return UploadResult{FileID: file.ID, Status: "ready", Chunks: len(parts)}, nil

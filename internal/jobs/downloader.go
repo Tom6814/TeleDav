@@ -3,6 +3,7 @@ package jobs
 import (
 	"bytes"
 	"context"
+	"io"
 
 	"telegram-webdav/internal/store"
 	"telegram-webdav/internal/telegram"
@@ -21,20 +22,27 @@ func NewDownloader(repo chunkReader, client telegram.Client) *Downloader {
 	return &Downloader{repo: repo, client: client}
 }
 
-func (d *Downloader) ReadAll(ctx context.Context, fileID int64) ([]byte, error) {
+func (d *Downloader) StreamTo(ctx context.Context, fileID int64, w io.Writer) error {
 	chunks, err := d.repo.ListChunks(ctx, fileID)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var buffer bytes.Buffer
 	for _, chunk := range chunks {
 		data, err := d.client.DownloadChunk(ctx, chunk.TelegramChatID, chunk.TelegramMessageID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if _, err := buffer.Write(data); err != nil {
-			return nil, err
+		if _, err := w.Write(data); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func (d *Downloader) ReadAll(ctx context.Context, fileID int64) ([]byte, error) {
+	var buffer bytes.Buffer
+	if err := d.StreamTo(ctx, fileID, &buffer); err != nil {
+		return nil, err
 	}
 	return buffer.Bytes(), nil
 }
