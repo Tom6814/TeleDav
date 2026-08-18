@@ -1,0 +1,70 @@
+CREATE TABLE IF NOT EXISTS directories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER NULL,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS file_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mime TEXT NOT NULL DEFAULT '',
+    sha256 TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    chunk_size INTEGER NOT NULL,
+    chunk_sha256 TEXT NOT NULL DEFAULT '',
+    telegram_chat_id INTEGER NOT NULL,
+    telegram_message_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS upload_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    last_chunk_index INTEGER NOT NULL DEFAULT 0,
+    staged_path TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS system_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    telegram_session_blob TEXT NOT NULL DEFAULT '',
+    telegram_target_chat_id INTEGER NOT NULL DEFAULT 0,
+    default_chunk_size INTEGER NOT NULL DEFAULT 0,
+    max_staging_bytes INTEGER NOT NULL DEFAULT 0,
+    download_cache_ttl_seconds INTEGER NOT NULL DEFAULT 0,
+    app_password TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cache_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    file_id INTEGER NOT NULL DEFAULT 0,
+    reserved_bytes INTEGER NOT NULL,
+    actual_bytes INTEGER NOT NULL DEFAULT 0,
+    state TEXT NOT NULL,
+    expires_at TEXT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
