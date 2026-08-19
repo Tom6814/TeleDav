@@ -1,34 +1,57 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import 'telegram_connect_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({
     super.key,
     required this.config,
+    required this.telegramAuth,
+    required this.telegramChannels,
     required this.busy,
-    required this.chatIdController,
+    required this.phoneController,
+    required this.codeController,
+    required this.telegramPasswordController,
+    required this.newChannelController,
     required this.chunkSizeController,
     required this.maxStagingController,
     required this.downloadTtlController,
-    required this.sessionBlobController,
     required this.onRefresh,
     required this.onSave,
+    required this.onStartTelegramAuth,
+    required this.onVerifyTelegramCode,
+    required this.onVerifyTelegramPassword,
+    required this.onRefreshTelegramChannels,
+    required this.onSelectTelegramChannel,
+    required this.onCreateTelegramChannel,
+    required this.onDisconnectTelegram,
     this.errorMessage,
     this.statusMessage,
   });
 
   final StorageConfig config;
+  final TelegramAuthStatus telegramAuth;
+  final List<TelegramChannel> telegramChannels;
   final bool busy;
   final String? errorMessage;
   final String? statusMessage;
-  final TextEditingController chatIdController;
+  final TextEditingController phoneController;
+  final TextEditingController codeController;
+  final TextEditingController telegramPasswordController;
+  final TextEditingController newChannelController;
   final TextEditingController chunkSizeController;
   final TextEditingController maxStagingController;
   final TextEditingController downloadTtlController;
-  final TextEditingController sessionBlobController;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onSave;
+  final Future<void> Function() onStartTelegramAuth;
+  final Future<void> Function() onVerifyTelegramCode;
+  final Future<void> Function() onVerifyTelegramPassword;
+  final Future<void> Function() onRefreshTelegramChannels;
+  final Future<void> Function(TelegramChannel channel) onSelectTelegramChannel;
+  final Future<void> Function() onCreateTelegramChannel;
+  final Future<void> Function() onDisconnectTelegram;
 
   @override
   Widget build(BuildContext context) {
@@ -52,8 +75,32 @@ class SettingsScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: TelegramConnectScreen(
+              status: telegramAuth,
+              channels: telegramChannels,
+              busy: busy,
+              phoneController: phoneController,
+              codeController: codeController,
+              passwordController: telegramPasswordController,
+              newChannelController: newChannelController,
+              onStart: onStartTelegramAuth,
+              onVerifyCode: onVerifyTelegramCode,
+              onVerifyPassword: onVerifyTelegramPassword,
+              onRefreshChannels: onRefreshTelegramChannels,
+              onSelectChannel: onSelectTelegramChannel,
+              onCreateChannel: onCreateTelegramChannel,
+              onDisconnect: onDisconnectTelegram,
+              errorMessage: errorMessage,
+              statusMessage: statusMessage,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         ListTile(
-          title: const Text('Telegram session'),
+          title: const Text('Telegram status'),
           subtitle: Text(
             config.telegramSessionReady ? 'Session saved' : 'Session not saved',
           ),
@@ -64,15 +111,6 @@ class SettingsScreen extends StatelessWidget {
             config.applicationPasswordSet ? 'Configured' : 'Not configured',
           ),
         ),
-        TextField(
-          controller: chatIdController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Telegram target chat ID',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
         TextField(
           controller: chunkSizeController,
           keyboardType: TextInputType.number,
@@ -99,32 +137,6 @@ class SettingsScreen extends StatelessWidget {
             border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: sessionBlobController,
-          minLines: 4,
-          maxLines: 8,
-          decoration: const InputDecoration(
-            labelText: 'Telegram session blob',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(),
-            helperText: 'Paste a saved session blob to persist it server-side.',
-          ),
-        ),
-        if (statusMessage != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            statusMessage!,
-            style: TextStyle(color: Theme.of(context).colorScheme.primary),
-          ),
-        ],
-        if (errorMessage != null) ...[
-          const SizedBox(height: 12),
-          Text(
-            errorMessage!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ],
       ],
     );
   }

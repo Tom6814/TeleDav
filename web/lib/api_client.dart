@@ -13,6 +13,17 @@ class ApiClient {
   final http.Client _httpClient;
   final String _baseUrl;
 
+  List<dynamic> _decodeJsonList(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded == null) {
+      return <dynamic>[];
+    }
+    if (decoded is List<dynamic>) {
+      return decoded;
+    }
+    throw Exception('expected JSON list payload');
+  }
+
   Future<void> login(String password) async {
     final response = await _httpClient.post(
       Uri.parse('$_baseUrl/api/login'),
@@ -56,12 +67,116 @@ class ApiClient {
     );
   }
 
+  Future<TelegramAuthStatus> fetchTelegramAuthStatus() async {
+    final response =
+        await _httpClient.get(Uri.parse('$_baseUrl/api/telegram/auth/status'));
+    if (response.statusCode != 200) {
+      throw Exception('telegram auth status failed: ${response.statusCode}');
+    }
+    return TelegramAuthStatus.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<TelegramAuthStatus> startTelegramAuth(String phone) async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseUrl/api/telegram/auth/start'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'phone': phone}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('telegram auth start failed: ${response.statusCode}');
+    }
+    return TelegramAuthStatus.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<TelegramAuthStatus> verifyTelegramCode(String code) async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseUrl/api/telegram/auth/verify-code'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'code': code}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('telegram code verify failed: ${response.statusCode}');
+    }
+    return TelegramAuthStatus.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<TelegramAuthStatus> verifyTelegramPassword(String password) async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseUrl/api/telegram/auth/verify-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'password': password}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('telegram password verify failed: ${response.statusCode}');
+    }
+    return TelegramAuthStatus.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<TelegramAuthStatus> disconnectTelegram() async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseUrl/api/telegram/auth/disconnect'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('telegram disconnect failed: ${response.statusCode}');
+    }
+    return TelegramAuthStatus.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<List<TelegramChannel>> fetchTelegramChannels() async {
+    final response = await _httpClient.get(Uri.parse('$_baseUrl/api/telegram/channels'));
+    if (response.statusCode != 200) {
+      throw Exception('telegram channels failed: ${response.statusCode}');
+    }
+    final data = _decodeJsonList(response.body);
+    return data
+        .map((entry) => TelegramChannel.fromJson(entry as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<TelegramAuthStatus> selectTelegramChannel(int channelId) async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseUrl/api/telegram/channels/select'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'channel_id': channelId}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('telegram channel select failed: ${response.statusCode}');
+    }
+    return TelegramAuthStatus.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<TelegramChannel> createTelegramChannel(String title) async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseUrl/api/telegram/channels/create'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'title': title}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('telegram channel create failed: ${response.statusCode}');
+    }
+    return TelegramChannel.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Future<List<PendingJob>> fetchJobs() async {
     final response = await _httpClient.get(Uri.parse('$_baseUrl/api/jobs'));
     if (response.statusCode != 200) {
       throw Exception('jobs request failed: ${response.statusCode}');
     }
-    final data = jsonDecode(response.body) as List<dynamic>;
+    final data = _decodeJsonList(response.body);
     return data
         .map((entry) => PendingJob.fromJson(entry as Map<String, dynamic>))
         .toList();

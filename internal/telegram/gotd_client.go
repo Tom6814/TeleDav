@@ -99,3 +99,48 @@ func (c *GOTDClient) uploadLocal(path string) (UploadedChunk, error) {
 		Size:      n,
 	}, nil
 }
+
+func (c *GOTDClient) SendCode(ctx context.Context, phone string) (SendCodeResult, error) {
+	return SendCodeResult{
+		Phone:       phone,
+		PhoneMasked: phone,
+		RequestID:   "local-request",
+	}, nil
+}
+
+func (c *GOTDClient) VerifyCode(ctx context.Context, requestID, code string) (CodeAuthResult, error) {
+	return CodeAuthResult{
+		Step: AuthStepConnected,
+		User: User{
+			ID:          1,
+			DisplayName: "Telegram User",
+			PhoneMasked: "",
+		},
+		SessionBlob: "local-session",
+	}, nil
+}
+
+func (c *GOTDClient) VerifyPassword(ctx context.Context, requestID, password string) (PasswordAuthResult, error) {
+	return PasswordAuthResult{
+		User: User{
+			ID:          1,
+			DisplayName: "Telegram User",
+			PhoneMasked: "",
+		},
+		SessionBlob: "local-session",
+	}, nil
+}
+
+func (c *GOTDClient) ListChannels(ctx context.Context) ([]Channel, error) {
+	if c.chatID != 0 {
+		return []Channel{{ID: c.chatID, Title: "Configured Storage Channel"}}, nil
+	}
+	return []Channel{}, nil
+}
+
+func (c *GOTDClient) CreateChannel(ctx context.Context, title string) (Channel, error) {
+	return Channel{
+		ID:    time.Now().UnixNano(),
+		Title: title,
+	}, nil
+}

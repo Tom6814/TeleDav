@@ -9,21 +9,25 @@ import 'screens/login_screen.dart';
 import 'screens/settings_screen.dart';
 
 class NetdiskApp extends StatefulWidget {
-  const NetdiskApp({super.key});
+  const NetdiskApp({super.key, this.api});
+
+  final ApiClient? api;
 
   @override
   State<NetdiskApp> createState() => _NetdiskAppState();
 }
 
 class _NetdiskAppState extends State<NetdiskApp> {
-  final ApiClient _api = ApiClient();
+  late final ApiClient _api = widget.api ?? ApiClient();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _newDirectoryController = TextEditingController();
-  final TextEditingController _chatIdController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _codeController = TextEditingController();
+  final TextEditingController _telegramPasswordController = TextEditingController();
+  final TextEditingController _newChannelController = TextEditingController();
   final TextEditingController _chunkSizeController = TextEditingController();
   final TextEditingController _maxStagingController = TextEditingController();
   final TextEditingController _downloadTtlController = TextEditingController();
-  final TextEditingController _sessionBlobController = TextEditingController();
 
   bool _authenticated = false;
   bool _busy = false;
@@ -32,16 +36,20 @@ class _NetdiskAppState extends State<NetdiskApp> {
   TreeResponse? _tree;
   List<PendingJob> _jobs = const [];
   StorageConfig _config = const StorageConfig();
+  TelegramAuthStatus _telegramAuth = const TelegramAuthStatus(step: 'disconnected');
+  List<TelegramChannel> _telegramChannels = const [];
 
   @override
   void dispose() {
     _passwordController.dispose();
     _newDirectoryController.dispose();
-    _chatIdController.dispose();
+    _phoneController.dispose();
+    _codeController.dispose();
+    _telegramPasswordController.dispose();
+    _newChannelController.dispose();
     _chunkSizeController.dispose();
     _maxStagingController.dispose();
     _downloadTtlController.dispose();
-    _sessionBlobController.dispose();
     super.dispose();
   }
 
@@ -51,11 +59,17 @@ class _NetdiskAppState extends State<NetdiskApp> {
       final tree = await _api.fetchDirectory();
       final config = await _api.fetchStorageConfig();
       final jobs = await _api.fetchJobs();
+      final telegramAuth = await _api.fetchTelegramAuthStatus();
+      final telegramChannels = telegramAuth.connected
+          ? await _api.fetchTelegramChannels()
+          : const <TelegramChannel>[];
       setState(() {
         _authenticated = true;
         _tree = tree;
         _config = config;
         _jobs = jobs;
+        _telegramAuth = telegramAuth;
+        _telegramChannels = telegramChannels;
         _errorMessage = null;
       });
       _syncConfigControllers(config);
@@ -84,8 +98,6 @@ class _NetdiskAppState extends State<NetdiskApp> {
   }
 
   void _syncConfigControllers(StorageConfig config) {
-    _chatIdController.text =
-        config.telegramTargetChatId == 0 ? '' : '${config.telegramTargetChatId}';
     _chunkSizeController.text =
         config.defaultChunkSize == 0 ? '' : '${config.defaultChunkSize}';
     _maxStagingController.text =
@@ -124,6 +136,18 @@ class _NetdiskAppState extends State<NetdiskApp> {
       await _refreshTree(parentId: _tree?.directory.id);
       await _refreshConfig();
       await _refreshJobs();
+      await _refreshTelegramAuth();
+    });
+  }
+
+  Future<void> _refreshTelegramAuth() async {
+    final auth = await _api.fetchTelegramAuthStatus();
+    final channels = auth.connected
+        ? await _api.fetchTelegramChannels()
+        : const <TelegramChannel>[];
+    setState(() {
+      _telegramAuth = auth;
+      _telegramChannels = channels;
     });
   }
 
@@ -180,12 +204,10 @@ class _NetdiskAppState extends State<NetdiskApp> {
       return int.tryParse(raw);
     }
 
-    final chatId = parseInt(_chatIdController);
     final chunkSize = parseInt(_chunkSizeController);
     final maxStaging = parseInt(_maxStagingController);
     final downloadTtl = parseInt(_downloadTtlController);
-    if ((_chatIdController.text.trim().isNotEmpty && chatId == null) ||
-        (_chunkSizeController.text.trim().isNotEmpty && chunkSize == null) ||
+    if ((_chunkSizeController.text.trim().isNotEmpty && chunkSize == null) ||
         (_maxStagingController.text.trim().isNotEmpty && maxStaging == null) ||
         (_downloadTtlController.text.trim().isNotEmpty && downloadTtl == null)) {
       setState(() {
@@ -196,13 +218,9 @@ class _NetdiskAppState extends State<NetdiskApp> {
 
     await _runAction(() async {
       await _api.updateStorageConfig(
-        telegramTargetChatId: chatId,
         defaultChunkSize: chunkSize,
         maxStagingBytes: maxStaging,
         downloadCacheTtlSeconds: downloadTtl,
-        telegramSessionBlob: _sessionBlobController.text.trim().isEmpty
-            ? null
-            : _sessionBlobController.text.trim(),
       );
       await _refreshConfig();
       setState(() {
@@ -218,6 +236,117 @@ class _NetdiskAppState extends State<NetdiskApp> {
       await _refreshTree(parentId: _tree?.directory.id);
       setState(() {
         _statusMessage = 'Job retried.';
+      });
+    });
+  }
+
+  Future<void> _startTelegramAuth() async {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      setState(() {
+        _errorMessage = 'Phone number is required.';
+      });
+      return;
+    }
+    await _runAction(() async {
+      final auth = await _api.startTelegramAuth(phone);
+      setState(() {
+        _telegramAuth = auth;
+        _statusMessage = 'Verification code sent.';
+      });
+    });
+  }
+
+  Future<void> _verifyTelegramCode() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) {
+      setState(() {
+        _errorMessage = 'Verification code is required.';
+      });
+      return;
+    }
+    await _runAction(() async {
+      final auth = await _api.verifyTelegramCode(code);
+      _codeController.clear();
+      setState(() {
+        _telegramAuth = auth;
+        _statusMessage = auth.connected
+            ? 'Telegram connected.'
+            : 'Verification code accepted.';
+      });
+      await _refreshConfig();
+      await _refreshTelegramAuth();
+    });
+  }
+
+  Future<void> _verifyTelegramPassword() async {
+    final password = _telegramPasswordController.text.trim();
+    if (password.isEmpty) {
+      setState(() {
+        _errorMessage = 'Telegram password is required.';
+      });
+      return;
+    }
+    await _runAction(() async {
+      final auth = await _api.verifyTelegramPassword(password);
+      _telegramPasswordController.clear();
+      setState(() {
+        _telegramAuth = auth;
+        _statusMessage = 'Telegram connected.';
+      });
+      await _refreshConfig();
+      await _refreshTelegramAuth();
+    });
+  }
+
+  Future<void> _disconnectTelegram() async {
+    await _runAction(() async {
+      final auth = await _api.disconnectTelegram();
+      setState(() {
+        _telegramAuth = auth;
+        _telegramChannels = const [];
+        _statusMessage = 'Telegram disconnected.';
+      });
+      await _refreshConfig();
+    });
+  }
+
+  Future<void> _refreshTelegramChannels() async {
+    await _runAction(() async {
+      await _refreshTelegramAuth();
+      setState(() {
+        _statusMessage = 'Telegram channels reloaded.';
+      });
+    });
+  }
+
+  Future<void> _selectTelegramChannel(TelegramChannel channel) async {
+    await _runAction(() async {
+      final auth = await _api.selectTelegramChannel(channel.id);
+      setState(() {
+        _telegramAuth = auth;
+        _statusMessage = 'Storage channel updated.';
+      });
+      await _refreshConfig();
+      await _refreshTelegramAuth();
+    });
+  }
+
+  Future<void> _createTelegramChannel() async {
+    final title = _newChannelController.text.trim();
+    if (title.isEmpty) {
+      setState(() {
+        _errorMessage = 'Channel title is required.';
+      });
+      return;
+    }
+    await _runAction(() async {
+      await _api.createTelegramChannel(title);
+      _newChannelController.clear();
+      await _refreshConfig();
+      await _refreshTelegramAuth();
+      setState(() {
+        _statusMessage = 'Dedicated storage channel created.';
       });
     });
   }
@@ -287,16 +416,27 @@ class _NetdiskAppState extends State<NetdiskApp> {
                     ),
                     SettingsScreen(
                       config: _config,
+                      telegramAuth: _telegramAuth,
+                      telegramChannels: _telegramChannels,
                       busy: _busy,
                       errorMessage: _errorMessage,
                       statusMessage: _statusMessage,
-                      chatIdController: _chatIdController,
+                      phoneController: _phoneController,
+                      codeController: _codeController,
+                      telegramPasswordController: _telegramPasswordController,
+                      newChannelController: _newChannelController,
                       chunkSizeController: _chunkSizeController,
                       maxStagingController: _maxStagingController,
                       downloadTtlController: _downloadTtlController,
-                      sessionBlobController: _sessionBlobController,
                       onRefresh: _refreshConfig,
                       onSave: _saveSettings,
+                      onStartTelegramAuth: _startTelegramAuth,
+                      onVerifyTelegramCode: _verifyTelegramCode,
+                      onVerifyTelegramPassword: _verifyTelegramPassword,
+                      onRefreshTelegramChannels: _refreshTelegramChannels,
+                      onSelectTelegramChannel: _selectTelegramChannel,
+                      onCreateTelegramChannel: _createTelegramChannel,
+                      onDisconnectTelegram: _disconnectTelegram,
                     ),
                     JobsScreen(
                       jobs: _jobs,

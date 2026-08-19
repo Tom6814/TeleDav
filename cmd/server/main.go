@@ -66,6 +66,15 @@ func main() {
 		cfg.TelegramAPIID,
 		cfg.TelegramAPIHash,
 	)
+	authService := telegram.NewAuthService(telegramClient)
+	if storedCfg.TelegramSessionBlob != "" {
+		authService.Restore(
+			storedCfg.TelegramSessionBlob,
+			telegram.User{DisplayName: "Telegram User"},
+			storedCfg.TelegramTargetChatID,
+			"",
+		)
+	}
 	uploader := jobs.NewUploader(repo, telegramClient)
 	downloader := jobs.NewDownloader(repo, telegramClient)
 	fsService := vfs.New(repo)
@@ -86,6 +95,7 @@ func main() {
 		Retryer:          jobController,
 		Uploader:         uploader,
 		Downloader:       downloader,
+		TelegramAuth:     authService,
 		WebDAV: appwebdav.New(&appwebdav.Service{
 			FS:               fsService,
 			Uploader:         uploader,
