@@ -125,6 +125,89 @@ class StorageConfig {
   }
 }
 
+class TelegramUser {
+  const TelegramUser({
+    this.id = 0,
+    this.displayName = '',
+    this.phoneMasked = '',
+  });
+
+  final int id;
+  final String displayName;
+  final String phoneMasked;
+
+  factory TelegramUser.fromJson(Map<String, dynamic> json) {
+    return TelegramUser(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      displayName: json['display_name'] as String? ?? '',
+      phoneMasked: json['phone_masked'] as String? ?? '',
+    );
+  }
+}
+
+class TelegramAuthStatus {
+  const TelegramAuthStatus({
+    required this.step,
+    this.connected = false,
+    this.user = const TelegramUser(),
+    this.phone = '',
+    this.phoneMasked = '',
+    this.selectedChannelId = 0,
+    this.selectedChannelTitle = '',
+  });
+
+  final String step;
+  final bool connected;
+  final TelegramUser user;
+  final String phone;
+  final String phoneMasked;
+  final int selectedChannelId;
+  final String selectedChannelTitle;
+
+  bool get needsPhone => step == 'disconnected';
+  bool get needsCode => step == 'code_required';
+  bool get needsPassword => step == 'password_required';
+
+  factory TelegramAuthStatus.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic> asMap(Object? value) {
+      if (value is Map<String, dynamic>) {
+        return value;
+      }
+      return const <String, dynamic>{};
+    }
+
+    return TelegramAuthStatus(
+      step: json['step'] as String? ?? 'disconnected',
+      connected: json['connected'] as bool? ?? false,
+      user: TelegramUser.fromJson(asMap(json['user'])),
+      phone: json['phone'] as String? ?? '',
+      phoneMasked: json['phone_masked'] as String? ?? '',
+      selectedChannelId: (json['selected_channel_id'] as num?)?.toInt() ?? 0,
+      selectedChannelTitle: json['selected_channel_title'] as String? ?? '',
+    );
+  }
+}
+
+class TelegramChannel {
+  const TelegramChannel({
+    required this.id,
+    required this.title,
+    this.selected = false,
+  });
+
+  final int id;
+  final String title;
+  final bool selected;
+
+  factory TelegramChannel.fromJson(Map<String, dynamic> json) {
+    return TelegramChannel(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      title: json['title'] as String? ?? '',
+      selected: json['selected'] as bool? ?? false,
+    );
+  }
+}
+
 class PendingJob {
   const PendingJob({
     required this.id,

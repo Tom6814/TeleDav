@@ -14,6 +14,7 @@ import (
 
 	"telegram-webdav/internal/jobs"
 	"telegram-webdav/internal/store"
+	"telegram-webdav/internal/telegram"
 	"telegram-webdav/internal/vfs"
 )
 
@@ -195,6 +196,83 @@ func TestStorageConfigPatchMergesExistingValues(t *testing.T) {
 	}
 }
 
+func TestTelegramAuthStatusRouteReturnsDisconnectedState(t *testing.T) {
+	auth := &fakeTelegramAuthService{}
+	h := NewRouter(Dependencies{
+		AppPassword:   "secret",
+		SessionSecret: "",
+		WebDir:        t.TempDir(),
+		TelegramAuth:  auth,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/telegram/auth/status", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: "single-user"})
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var status telegram.AuthStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if status.Step != telegram.AuthStepDisconnected {
+		t.Fatalf("status.Step = %q, want %q", status.Step, telegram.AuthStepDisconnected)
+	}
+}
+
+func TestTelegramAuthSelectChannelPersistsConfig(t *testing.T) {
+	ctx := context.Background()
+	repo, err := store.Open("file::memory:?cache=shared")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	defer repo.Close()
+	if err := repo.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate returned error: %v", err)
+	}
+	auth := &fakeTelegramAuthService{
+		status: telegram.AuthStatus{
+			Step:        telegram.AuthStepConnected,
+			Connected:   true,
+			SessionBlob: "saved-session",
+		},
+		channels: []telegram.Channel{
+			{ID: 99, Title: "Storage"},
+		},
+	}
+	h := NewRouter(Dependencies{
+		AppPassword:   "secret",
+		SessionSecret: "",
+		WebDir:        t.TempDir(),
+		ConfigStore:   repo,
+		TelegramAuth:  auth,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/telegram/channels/select", strings.NewReader(`{"channel_id":99}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session", Value: "single-user"})
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	cfg, err := repo.GetSystemConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetSystemConfig returned error: %v", err)
+	}
+	if cfg.TelegramTargetChatID != 99 {
+		t.Fatalf("cfg.TelegramTargetChatID = %d, want 99", cfg.TelegramTargetChatID)
+	}
+	if cfg.TelegramSessionBlob != "saved-session" {
+		t.Fatalf("cfg.TelegramSessionBlob = %q, want %q", cfg.TelegramSessionBlob, "saved-session")
+	}
+}
+
 func TestFSTreeSupportsParentDirectoryQuery(t *testing.T) {
 	ctx := context.Background()
 	repo, err := store.Open("file::memory:?cache=shared")
@@ -313,6 +391,64 @@ func TestFSUploadUsesProvidedParentID(t *testing.T) {
 type fakeJobController struct {
 	job       store.UploadJob
 	retriedID int64
+}
+
+type fakeTelegramAuthService struct {
+	status   telegram.AuthStatus
+	channels []telegram.Channel
+}
+
+func (f *fakeTelegramAuthService) Status(ctx context.Context) telegram.AuthStatus {
+	if f.status.Step == "" {
+		return telegram.AuthStatus{Step: telegram.AuthStepDisconnected}
+	}
+	return f.status
+}
+
+func (f *fakeTelegramAuthService) Start(ctx context.Context, phone string) error {
+	f.status.Step = telegram.AuthStepCodeRequired
+	f.status.Phone = phone
+	return nil
+}
+
+func (f *fakeTelegramAuthService) VerifyCode(ctx context.Context, code string) error {
+	f.status.Step = telegram.AuthStepConnected
+	f.status.Connected = true
+	return nil
+}
+
+func (f *fakeTelegramAuthService) VerifyPassword(ctx context.Context, password string) error {
+	f.status.Step = telegram.AuthStepConnected
+	f.status.Connected = true
+	return nil
+}
+
+func (f *fakeTelegramAuthService) Disconnect(ctx context.Context) error {
+	f.status = telegram.AuthStatus{Step: telegram.AuthStepDisconnected}
+	return nil
+}
+
+func (f *fakeTelegramAuthService) ListChannels(ctx context.Context) ([]telegram.Channel, error) {
+	return f.channels, nil
+}
+
+func (f *fakeTelegramAuthService) SelectChannel(ctx context.Context, channelID int64) error {
+	for _, channel := range f.channels {
+		if channel.ID == channelID {
+			f.status.SelectedChannelID = channel.ID
+			f.status.SelectedChannel = channel.Title
+			return nil
+		}
+	}
+	return telegram.ErrChannelNotFound
+}
+
+func (f *fakeTelegramAuthService) CreateChannel(ctx context.Context, title string) (telegram.Channel, error) {
+	channel := telegram.Channel{ID: 100, Title: title}
+	f.channels = append(f.channels, channel)
+	f.status.SelectedChannelID = channel.ID
+	f.status.SelectedChannel = channel.Title
+	return channel, nil
 }
 
 func (f *fakeJobController) ListPendingJobs(ctx context.Context) ([]store.UploadJob, error) {

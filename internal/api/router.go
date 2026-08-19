@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"telegram-webdav/internal/httpx"
+	"telegram-webdav/internal/telegram"
 	appwebdav "telegram-webdav/internal/webdav"
 )
 
@@ -20,13 +22,33 @@ type Dependencies struct {
 	Retryer          JobRetryer
 	Uploader         UploadService
 	Downloader       DownloadService
+	TelegramAuth     TelegramAuthService
 	WebDAV           http.Handler
+}
+
+type TelegramAuthService interface {
+	Status(context.Context) telegram.AuthStatus
+	Start(context.Context, string) error
+	VerifyCode(context.Context, string) error
+	VerifyPassword(context.Context, string) error
+	Disconnect(context.Context) error
+	ListChannels(context.Context) ([]telegram.Channel, error)
+	SelectChannel(context.Context, int64) error
+	CreateChannel(context.Context, string) (telegram.Channel, error)
 }
 
 func NewRouter(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/login", loginHandler(deps))
 	mux.Handle("/api/config/storage", requireSession(deps, configHandler(deps)))
+	mux.Handle("/api/telegram/auth/status", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/auth/start", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/auth/verify-code", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/auth/verify-password", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/auth/disconnect", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/channels", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/channels/select", requireSession(deps, telegramAuthHandler(deps)))
+	mux.Handle("/api/telegram/channels/create", requireSession(deps, telegramAuthHandler(deps)))
 	mux.Handle("/api/fs/tree", requireSession(deps, fsTreeHandler(deps)))
 	mux.Handle("/api/fs/mkdir", requireSession(deps, mkdirHandler(deps)))
 	mux.Handle("/api/fs/delete", requireSession(deps, deleteHandler(deps)))
